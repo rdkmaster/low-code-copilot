@@ -53,7 +53,7 @@ const App = () => (
       width: '100vw',
     }}
     helloMessage={
-      '欢迎使用 ProChat ，我是你的专属机器人，这是我们的 Github：[ProChat](https://github.com/ant-design/pro-chat)'
+      '欢迎使用低代码助手，我是[《说透低代码》](https://time.geekbang.org/column/intro/100108401)专栏的AI演示助手。'
     }
     request={handleChatRequest}
   />
