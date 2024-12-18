@@ -17,6 +17,7 @@ chatbot/yarn-debug.log*
 chatbot/yarn-error.log*
 
 server/venv
+server/**/__pycache__
 
 # misc
 .DS_Store
