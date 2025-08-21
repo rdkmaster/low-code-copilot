@@ -52,9 +52,9 @@ function App() {
       return new Response("好的，已为您更新界面。");
     }
 
-    // Case 2: Backend returns a follow-up question
-    if (responseData.message) {
-      return new Response(responseData.message);
+    // Case 2: Backend returns a follow-up question or a query answer
+    if (responseData.message || responseData.text) {
+      return new Response(responseData.message || responseData.text);
     }
 
     // Fallback for any other case
