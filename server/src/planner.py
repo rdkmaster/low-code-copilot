@@ -16,9 +16,14 @@ class Planner:
             "`find_components(filters: array)`: 根据一个或多个属性条件，查找页面上所有符合条件的组件列表。",
             "`createComponent(parentId: string, componentType: string, properties: object)`: 在指定的父容器内，创建一个新的组件。",
             "`updateProperty(componentId: string, propertyName: string, propertyValue: any)`: 更新一个指定组件的某个属性。",
-            "`deleteComponent(componentId: string)`: 删除一个指定的组件。"
+            "`deleteComponent(componentId: string)`: 删除一个指定的组件。",
+            "`ask_user_for_clarification(question: string)`: 当无法继续时，向用户提问以获取澄清信息。"
         ]
         return "\n".join([f"- {tool}" for tool in tools])
+
+    def get_tools_description(self) -> str:
+        """返回格式化的工具描述字符串。"""
+        return self.tools_definition
 
     def _build_meta_prompt(self, goal: str, state_summary: str) -> str:
         """
@@ -60,6 +65,24 @@ class Planner:
         full_prompt = f"{role_prompt}\n\n{goal_prompt}\n\n{env_prompt}\n\n{tools_prompt}\n\n{contract_prompt}"
         return full_prompt
 
+    def generate_plan_from_prompt(self, prompt: str) -> dict | None:
+        """直接从一个完整的提示词生成计划，用于重规划。"""
+        try:
+            response = litellm.completion(
+                model="gpt-4o",
+                messages=[{"content": prompt, "role": "user"}],
+                response_format={"type": "json_object"},
+                temperature=0.1
+            )
+            plan_text = response.choices[0].message.content
+            return json.loads(plan_text)
+        except json.JSONDecodeError as e:
+            print(f"LLM在重规划时返回的计划不是有效的JSON格式: {e}")
+            return None
+        except Exception as e:
+            print(f"调用LLM进行重规划时出错: {e}")
+            return None
+
     def generate_plan(self, goal: str, page_state: dict) -> dict | None:
         """
         生成行动计划的核心方法。
@@ -71,22 +94,4 @@ class Planner:
         meta_prompt = self._build_meta_prompt(goal, state_summary)
         
         # 3. 调用LLM API
-        try:
-            response = litellm.completion(
-                model="gpt-4o", # 规划任务比较复杂，建议使用更强大的模型
-                messages=[{"content": meta_prompt, "role": "user"}],
-                response_format={"type": "json_object"}, # 请求JSON输出
-                temperature=0.1
-            )
-            plan_text = response.choices[0].message.content
-            
-            # 4. 健壮地解析JSON
-            return json.loads(plan_text)
-
-        except json.JSONDecodeError as e:
-            print(f"LLM返回的计划不是有效的JSON格式: {e}")
-            # 这里可以加入重试逻辑，比如把错误信息告诉LLM让它修复
-            return None
-        except Exception as e:
-            print(f"调用LLM生成计划时出错: {e}")
-            return None
+        return self.generate_plan_from_prompt(meta_prompt)

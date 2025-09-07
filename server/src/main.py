@@ -99,23 +99,27 @@ def chat(req: ChatRequest):
     if request_type == 'multi':
         print("请求被分类为 'multi'，启动规划和执行流程...")
         try:
-            # 1. 规划
+            # 1. 实例化核心模块
             planner = Planner()
+            engine = ExecutionEngine(tool_registry, planner)
+
+            # 2. 规划
             page_state = get_current_page_schema()
             generated_plan = planner.generate_plan(prompt, page_state)
             if not generated_plan:
                 raise HTTPException(status_code=500, detail="无法生成行动计划。")
 
-            # 2. 执行
-            engine = ExecutionEngine(tool_registry)
-            execution_results = engine.execute_plan(generated_plan)
+            # 3. 执行
+            # 将原始目标(prompt)和计划传给执行引擎
+            execution_result = engine.execute_plan(prompt, generated_plan)
             
-            # 3. 返回成功响应
-            return {"type": "execution_success", "data": execution_results}
+            # 4. 根据执行结果返回响应
+            return execution_result
 
         except Exception as e:
-            print(f"处理复杂请求时出错: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            print(f"处理复杂请求时发生顶层错误: {e}")
+            # 返回一个通用错误，因为具体错误已在引擎内部处理
+            raise HTTPException(status_code=500, detail=f"处理您的请求时发生意外错误: {e}")
 
     else: # request_type == 'single'
         print("请求被分类为 'single'，执行查询...")
