@@ -1,6 +1,6 @@
 import dspy
 import litellm
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -9,6 +9,8 @@ from .custom_lm import CustomLM
 from .observation_tools import get_page_outline, get_component_details, find_components
 from .page_state import get_current_page_schema
 from .planner import Planner
+from .execution_engine import ExecutionEngine
+from .mcp_tools import tool_registry
 
 # Initialize the FastAPI app
 app = FastAPI()
@@ -20,8 +22,6 @@ app.add_middleware(
 ) 
 
 # Configure DSPy and LiteLLM
-# 注意：为了让代码正常工作，我使用了其他文件中看到的示例key。
-# 在生产环境中，请务必使用环境变量等安全方式管理API Key。
 lm = CustomLM(
     api_base="https://xiaoai.plus/v1",
     api_key="sk-yhJhB5JgplmHZHXghuCbAbxr3GUzotlKd4MffZedhxVVNAZX"
@@ -45,7 +45,6 @@ query_predictor = dspy.Predict(QuerySignature)
 
 def handle_query_intent(prompt: str):
     """Handles intents that are about querying the page state."""
-    # 简单的启发式方法来选择工具
     context_data = None
     if "how many" in prompt or "find" in prompt or "all" in prompt:
         filters = [] 
@@ -60,7 +59,6 @@ def handle_query_intent(prompt: str):
     if not context_data:
         return "抱歉，我找不到可以回答您问题的信息。"
 
-    # 让LLM整合答案
     result = query_predictor(context=str(context_data), question=prompt)
     return result.answer
 
@@ -96,29 +94,37 @@ def route_request(user_query: str) -> str:
 @app.post("/chat")
 def chat(req: ChatRequest):
     prompt = req.prompt
-
-    # 1. 使用新的分流器判断用户意图
     request_type = route_request(prompt)
 
-    # 2. 根据意图类型进行路由
     if request_type == 'multi':
-        # 如果是复杂目标，则启动规划器
-        print("请求被分类为 'multi'，启动规划器...")
-        planner = Planner()
-        page_state = get_current_page_schema()
-        generated_plan = planner.generate_plan(prompt, page_state)
-        
-        if generated_plan:
-            return {"type": "plan", "data": generated_plan}
-        else:
-            return {"type": "error", "data": "抱歉，我无法为您生成行动计划。"}
+        print("请求被分类为 'multi'，启动规划和执行流程...")
+        try:
+            # 1. 规划
+            planner = Planner()
+            page_state = get_current_page_schema()
+            generated_plan = planner.generate_plan(prompt, page_state)
+            if not generated_plan:
+                raise HTTPException(status_code=500, detail="无法生成行动计划。")
+
+            # 2. 执行
+            engine = ExecutionEngine(tool_registry)
+            execution_results = engine.execute_plan(generated_plan)
+            
+            # 3. 返回成功响应
+            return {"type": "execution_success", "data": execution_results}
+
+        except Exception as e:
+            print(f"处理复杂请求时出错: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     else: # request_type == 'single'
-        # 如果是简单指令，可以沿用旧的逻辑（或进一步细分）
-        # 这里我们暂时假定所有 single 请求都是查询
         print("请求被分类为 'single'，执行查询...")
-        response_text = handle_query_intent(prompt)
-        return {"type": "text", "data": response_text}
+        try:
+            response_text = handle_query_intent(prompt)
+            return {"type": "text", "data": response_text}
+        except Exception as e:
+            print(f"处理简单请求时出错: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 @app.options("/chat")
 def options_chat():
